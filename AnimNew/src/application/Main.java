@@ -45,8 +45,6 @@ public class Main extends Application {
 	private static ArrayList<PanedCanvas> previewPanedCanvases = new ArrayList<PanedCanvas>();
 
 	private static ArrayList<Frame> frames = new ArrayList<Frame>();
-	
-	private static ArrayList<Point> selectedPoints = new ArrayList<Point>();
 
 	private static int selectedFrame = 0;
 	private static int firstPrevFrame = 0;
@@ -70,6 +68,7 @@ public class Main extends Application {
 
 	private static Point hoverPoint = null;
 	private static Point drawPoint = null;
+	private static Point selectedPoint = null;
 
 	private static MoveMode moveMode = MoveMode.NONE;
 
@@ -175,7 +174,7 @@ public class Main extends Application {
 		xSpinner = new Spinner<>(0.0, canvasSize - 1.0, 250.0);
 		ySpinner = new Spinner<>(0.0, canvasSize - 1.0, 250.0);
 		lengthSpinner = new Spinner<>(0.0, canvasSize * 2.0, 0.0);
-		angleSpinner = new Spinner<>(0.0, 360.0, 0.0);
+		angleSpinner = new Spinner<>(-1.0, 360.0, 0.0);
 		xSpinner.setMaxWidth(100);
 		ySpinner.setMaxWidth(100);
 		lengthSpinner.setMaxWidth(100);
@@ -234,7 +233,6 @@ public class Main extends Application {
 		frames.add(new Frame());
 		previewPanedCanvases.add(new PanedCanvas(canvasSize / 5, canvasSize / 5, Color.WHITE));
 		frames.get(0).getPoints().add(new Point(canvasSize / 2, canvasSize / 2));
-		selectedPoints.add(null);
 		
 		// DISABLE FOCUS
 		for (Node n : headerPart1.getChildren())
@@ -274,6 +272,12 @@ public class Main extends Application {
 		btnInsertFrame.setOnAction(e -> addFrameClicked());
 		btnPrevFrame.setOnAction(e -> prevFrameClicked());
 		btnNextFrame.setOnAction(e -> nextFrameClicked());
+		
+		// SPINNER EVENTS
+		xSpinner.valueProperty().addListener(e -> xSpinnerChanged());
+		ySpinner.valueProperty().addListener(e -> ySpinnerChanged());
+		lengthSpinner.valueProperty().addListener(e -> lengthSpinnerChanged());
+		angleSpinner.valueProperty().addListener(e -> angleSpinnerChanged());
 	}
 
 	private static void layoutKeyPressed(KeyEvent e) {
@@ -310,8 +314,8 @@ public class Main extends Application {
 				if (tmpPoint == null)
 					return;
 				
-				if (tmpPoint == selectedPoints.get(selectedFrame))
-					selectedPoints.set(selectedFrame, null);
+				if (tmpPoint == selectedPoint)
+					selectedPoint = null;
 
 				tmpPoint.getLinks().get(0).setParent(null);
 				tmpPoint.getLinks().get(0).getLinks().remove(tmpPoint);
@@ -325,7 +329,6 @@ public class Main extends Application {
 				return;
 
 			frames.remove(selectedFrame);
-			selectedPoints.remove(selectedFrame);
 
 			if (selectedFrame > 0)
 				selectedFrame--;
@@ -498,6 +501,7 @@ public class Main extends Application {
 			drawPoint = new Point(mouseX, mouseY, hoverPoint);
 			hoverPoint.getLinks().add(drawPoint);
 			frame.getPoints().add(drawPoint);
+			selectedPoint = drawPoint;
 		}
 	}
 
@@ -645,13 +649,13 @@ public class Main extends Application {
 		
 		if (mouseX == oldMouseX && mouseY == oldMouseY && e.getButton() == MouseButton.PRIMARY) {
 			
-			if (hoverPoint != selectedPoints.get(selectedFrame)) {
+			if (hoverPoint != selectedPoint) {
 				
-				selectedPoints.set(selectedFrame, hoverPoint);
+				selectedPoint = hoverPoint;
 				
 			} else {
 				
-				selectedPoints.set(selectedFrame, null);
+				selectedPoint = null;
 			}
 			
 			setSpinnerValues();
@@ -660,11 +664,133 @@ public class Main extends Application {
 		drawMainFrame();
 	}
 	
+	private static void xSpinnerChanged() {
+		
+		if (selectedPoint == null)
+			return;
+		
+		if (selectedPoint.getX() != xSpinner.getValue()) {
+			
+			double oldAngle = selectedPoint.getAngle();
+
+			selectedPoint.moveTo(xSpinner.getValue(), selectedPoint.getY());
+			
+			if (selectedPoint.getParent() != null) {
+				
+				selectedPoint.setAngle(getAngle(selectedPoint, selectedPoint.getParent()));
+				
+				for (Point p : frames.get(selectedFrame).getPoints())
+					p.setUpdated(false);
+				selectedPoint.setUpdated(true);
+
+				adjustPoints(selectedPoint, selectedPoint.getAngle() - oldAngle);
+			}
+			
+			drawMainFrame();
+		}
+	}
+	
+	private static void ySpinnerChanged() {
+		
+		if (selectedPoint == null)
+			return;
+		
+		if (selectedPoint.getY() != ySpinner.getValue()) {
+			
+			double oldAngle = selectedPoint.getAngle();
+
+			selectedPoint.moveTo(selectedPoint.getX(), ySpinner.getValue());
+			
+			if (selectedPoint.getParent() != null) {
+				
+				selectedPoint.setAngle(getAngle(selectedPoint, selectedPoint.getParent()));
+				
+				for (Point p : frames.get(selectedFrame).getPoints())
+					p.setUpdated(false);
+				selectedPoint.setUpdated(true);
+
+				adjustPoints(selectedPoint, selectedPoint.getAngle() - oldAngle);
+			}
+			
+			drawMainFrame();
+		}
+	}
+	
+	private static void lengthSpinnerChanged() {
+		
+		if (selectedPoint == null)
+			return;
+		
+		if (selectedPoint.getParent() == null)
+			return;
+		
+		if (selectedPoint.getDist() != lengthSpinner.getValue()) {
+			
+			double angle = selectedPoint.getAngle() + Math.toRadians(180);
+
+			double newX = selectedPoint.getParent().getX() + lengthSpinner.getValue() * Math.cos(angle);
+			double newY = selectedPoint.getParent().getY() + lengthSpinner.getValue() * Math.sin(angle);
+
+			selectedPoint.moveTo(newX, newY);
+
+			for (Point p : frames.get(selectedFrame).getPoints())
+				p.setUpdated(false);
+			selectedPoint.setUpdated(true);
+
+			adjustPoints(selectedPoint, 0);
+			
+			drawMainFrame();
+		}
+	}
+	
+	private static void angleSpinnerChanged() {
+		
+		if (selectedPoint == null)
+			return;
+		
+		if (selectedPoint.getParent() == null)
+			return;
+		
+		if (moveMode != MoveMode.NONE)
+			return;
+		
+		if (angleSpinner.getValue() < 0)
+			angleSpinner.getValueFactory().setValue(angleSpinner.getValue() + 360);
+		
+		double checkAngle = Math.toRadians(angleSpinner.getValue() - 180);
+		
+		if (Math.toDegrees(checkAngle) < 0)
+			checkAngle += Math.toRadians(360);
+		
+		if (Math.toDegrees(checkAngle) >= 360)
+			checkAngle -= Math.toRadians(360);
+		
+		boolean compareAngles = ((int)(checkAngle*100)) != ((int)(selectedPoint.getAngle()*100));
+		
+		if (compareAngles) {
+			
+			double oldAngle = selectedPoint.getAngle();
+			double angle = Math.toRadians(angleSpinner.getValue());
+
+			double newX = selectedPoint.getParent().getX() + selectedPoint.getDist() * Math.cos(angle);
+			double newY = selectedPoint.getParent().getY() + selectedPoint.getDist() * Math.sin(angle);
+
+			selectedPoint.moveTo(newX, newY);
+			selectedPoint.setAngle(angle + Math.toRadians(180));
+
+			for (Point p : frames.get(selectedFrame).getPoints())
+				p.setUpdated(false);
+			selectedPoint.setUpdated(true);
+
+			adjustPoints(selectedPoint, selectedPoint.getAngle() - oldAngle);
+			
+			drawMainFrame();
+		}
+	}
+	
 	private static void setSpinnerValues() {
 		
 		setAngleAndDist();
-		
-		Point selectedPoint = selectedPoints.get(selectedFrame);
 		
 		double x = selectedPoint == null ? 0 : selectedPoint.getX();
 		double y = selectedPoint == null ? 0 : selectedPoint.getY();
@@ -736,11 +862,10 @@ public class Main extends Application {
 		previewPanedCanvases.clear();
 		previewPanedCanvases.add(new PanedCanvas(canvasSize / 5, canvasSize / 5, Color.WHITE));
 		frames.get(0).getPoints().add(new Point(canvasSize / 2, canvasSize / 2));
-		selectedPoints.clear();
 		selectedFrame = 0;
-		selectedPoints.add(null);
 		firstPrevFrame = 0;
 		lastPrevFrame = 1;
+		selectedPoint = null;
 		drawMainFrame();
 	}
 
@@ -847,14 +972,13 @@ public class Main extends Application {
 
 			frames = importFrames;
 			previewPanedCanvases.clear();
-			selectedPoints.clear();
 			for (int i = 0; i < frames.size(); i++) {
 				previewPanedCanvases.add(new PanedCanvas(canvasSize / 5, canvasSize / 5, Color.WHITE));
-				selectedPoints.add(null);
 			}
 			selectedFrame = 0;
 			firstPrevFrame = 0;
 			lastPrevFrame = frames.size() > 5 ? 5 : frames.size();
+			selectedPoint = null;
 			drawMainFrame();
 
 		} catch (Exception e) {
@@ -1017,7 +1141,6 @@ public class Main extends Application {
 
 		previewPanedCanvases.add(new PanedCanvas(canvasSize / 5, canvasSize / 5, Color.WHITE));
 		frames.add(selectedFrame, newFrame);
-		selectedPoints.add(selectedFrame, null);
 		selectedFrame++;
 
 		if (frames.size() <= 5) {
@@ -1032,6 +1155,8 @@ public class Main extends Application {
 				lastPrevFrame++;
 			}
 		}
+		
+		selectedPoint = null;
 
 		drawMainFrame();
 	}
@@ -1052,6 +1177,8 @@ public class Main extends Application {
 			firstPrevFrame--;
 			lastPrevFrame--;
 		}
+		
+		selectedPoint = null;
 
 		drawMainFrame();
 	}
@@ -1072,6 +1199,8 @@ public class Main extends Application {
 			firstPrevFrame++;
 			lastPrevFrame++;
 		}
+		
+		selectedPoint = null;
 
 		drawMainFrame();
 	}
@@ -1294,8 +1423,6 @@ public class Main extends Application {
 			gc.setLineCap(StrokeLineCap.ROUND);
 			gc.strokeLine(x1, y1, x2, y2);
 		}
-		
-		Point selectedPoint = selectedPoints.get(selectedFrame);
 		
 		if (selectedPoint != null) {
 			
